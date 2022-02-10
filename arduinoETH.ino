@@ -1,8 +1,9 @@
 /*
 HELLO GUYS THIS CODE is auto miner, made with pumafron afk, the code mine only using 100% arduino and ethernet shield
 
-the proyect is arduino miner to dunicoin made with revox
 
+thannks you LDarki for help me to fix connection error
+the proyect is arduino miner to dunicoin made with revox
 thanks you Joybed to fix the hashrate problem
 */
 
@@ -75,7 +76,8 @@ char SEP_TOKEN = ',';
 EthernetClient client;
 void setup() {
 
-
+  //set connection 
+  
   pinMode(LED_BUILTIN, OUTPUT);
   DUCOID = get_DUCOID();
   
@@ -95,7 +97,9 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  /*the variable buffer saves entire array, if end, this buffer is command entire*/
+  if(client.connect(pool,port)){
+  while (client.connected()){
+      /*the variable buffer saves entire array, if end, this buffer is command entire*/
   /*
   if(client.available()){
     char c = client.read();
@@ -123,7 +127,7 @@ void loop() {
     waitForClientData();
     String last_block_hash = getValue(client_buffer, SEP_TOKEN, 0);
     //fix prefix server version on hash
-    last_block_hash.remove(0, 3);
+    //last_block_hash.remove(0, 3);
     //
     String expected_hash = getValue(client_buffer, SEP_TOKEN, 1);
     //unsigned int difficulty = getValue(client_buffer, SEP_TOKEN, 2).toInt() * 100 + 1;
@@ -173,6 +177,9 @@ void loop() {
         digitalWrite(LED_BUILTIN, LOW);
     #endif
     delay(90);
+    }
+    }
+
 }
 
 //this function is to test pool ping command pls remove to final compilation
@@ -186,8 +193,17 @@ void testPing(){
   }
 }
 void JOB_REQUEST(){
-  if(client.connect(pool,port)){
-      Serial.println("testing pool conection");
+  /*
+  if(client.connected()){
+      //String petition = "JOB," + String(Username) + "," + "LOW";
+      String petition = "JOB," + String(Username) + "," + String("AVR");
+      client.print(petition);
+      //client.println(petition);
+      Serial.println(petition);
+    } else {
+      Serial.println("error: ");
+  }
+  */
       /*
       String petition = "JOB";
       petition += SEPARATOR;
@@ -200,9 +216,6 @@ void JOB_REQUEST(){
       client.print(petition);
       //client.println(petition);
       Serial.println(petition);
-    } else {
-      Serial.println("error: ");
-  }
 }
 String get_DUCOID() {
   String ID = "DUCOID";
