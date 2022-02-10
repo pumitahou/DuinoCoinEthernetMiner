@@ -13,6 +13,7 @@ byte pool[] = {162,55,103,174};
 unsigned short port = 6000;
 
 and change name to this Variable Username to start Mining
+
 String Username = "Puma";
 
 
