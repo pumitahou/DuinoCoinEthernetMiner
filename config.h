@@ -18,6 +18,7 @@
 
 // include the module config first, 
 // overwrite it in the arduino interface config.
+#pragma GCC optimize ("-Ofast")
 #include "sha1/default.h"
 
 #ifndef SHA_CONFIG_H_

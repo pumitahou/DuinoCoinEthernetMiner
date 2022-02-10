@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License     //
 // along with cryptosuite2.  If not, see <http://www.gnu.org/licenses/>. //
 //                                                                       //
-
+#pragma GCC optimize ("-Ofast")
 #include "sha1.h"
 
 #ifndef SHA1_DISABLED

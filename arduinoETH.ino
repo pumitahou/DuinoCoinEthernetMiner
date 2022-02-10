@@ -2,9 +2,11 @@
 HELLO GUYS THIS CODE is auto miner, made with pumafron afk, the code mine only using 100% arduino and ethernet shield
 
 the proyect is arduino miner to dunicoin made with revox
+
+thanks you Joybed to fix the hashrate problem
 */
 
-
+#pragma GCC optimize ("-Ofast")
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 13
@@ -45,6 +47,7 @@ uintDiff difficulty = 0;
 uintDiff ducos1result = 0;
 const uint16_t job_maxsize = 104;  
 uint8_t job[job_maxsize];
+Sha1Wrapper Sha1_base;
 
 //----------------
 
@@ -54,7 +57,7 @@ const char * miner_version = "PumaFron miner 3.0";
 String VER = "3.0";
 unsigned short SOC_TIMEOUT = 15;
 unsigned short REPORT_TIME = 120;
-unsigned short AVR_TIMEPUT = 4;
+unsigned short AVR_TIMEPUT = 7;
 String SEPARATOR = ",";
 String BLOCK = " ‖ ";
 
@@ -84,7 +87,10 @@ void setup() {
 
   Serial.print(DUCOID);
   //testPing();
-  JOB_REQUEST();
+  waitForClientData();
+  String server_version = getValue(client_buffer, SEP_TOKEN, 1);
+  Serial.println(server_version);
+  
 }
 
 void loop() {
@@ -106,15 +112,19 @@ void loop() {
       BUFFER_BITS="";
     }
     */
+    memset(job, 0, job_maxsize);
     #if defined(ARDUINO_ARCH_AVR)
         PORTB = PORTB & B11011111;
     #else
         digitalWrite(LED_BUILTIN, HIGH);
     #endif
-    memset(job, 0, job_maxsize);
+    
     JOB_REQUEST();
     waitForClientData();
     String last_block_hash = getValue(client_buffer, SEP_TOKEN, 0);
+    //fix prefix server version on hash
+    last_block_hash.remove(0, 3);
+    //
     String expected_hash = getValue(client_buffer, SEP_TOKEN, 1);
     //unsigned int difficulty = getValue(client_buffer, SEP_TOKEN, 2).toInt() * 100 + 1;
     unsigned int difficulty = getValue(client_buffer, SEP_TOKEN, 2).toInt();
@@ -130,16 +140,20 @@ void loop() {
     Serial.println("starting hashing");
     //----
     ducos1result = ducos1a(last_block_hash, expected_hash, difficulty);
+    last_block_hash = "";
+    expected_hash = "";
+    difficulty = 0;
     //DEBUG
     Serial.println("end hashing");
     //----
     uint32_t elapsedTime = micros() - startTime;
-    float elapsed_time_s = elapsedTime;
+    float elapsed_time_s = elapsedTime / 1000000.0f;
     float hashrate = ducos1result / elapsed_time_s;
     //DEBUG
     Serial.print("hashrate: ");
-    Serial.print(ducos1result);
-    Serial.println("...");
+    Serial.print(hashrate);
+    Serial.print(" speed: ");
+    Serial.println(elapsed_time_s);
     //----
     client.print(String(ducos1result)
                    + ","
@@ -158,7 +172,7 @@ void loop() {
     #else
         digitalWrite(LED_BUILTIN, LOW);
     #endif
-    delay(1000);
+    delay(90);
 }
 
 //this function is to test pool ping command pls remove to final compilation
@@ -181,7 +195,8 @@ void JOB_REQUEST(){
       petition += SEPARATOR;
       petition += "AVR";
       */
-      String petition = "JOB," + String(Username) + "," + "AVR";
+      //String petition = "JOB," + String(Username) + "," + "LOW";
+      String petition = "JOB," + String(Username) + "," + String("AVR");
       client.print(petition);
       //client.println(petition);
       Serial.println(petition);
@@ -212,21 +227,21 @@ uintDiff ducos1a(String lastblockhash, String newblockhash,
     // If the difficulty is too high for AVR architecture then return 0
     if (difficulty > 655) return 0;
   #endif
+  Sha1_base.init();
+  Sha1_base.print(lastblockhash);
   for (uintDiff ducos1res = 0; ducos1res < difficulty * 100 + 1; ducos1res++) {
-    Sha1.init();
-    Sha1.print(lastblockhash + String(ducos1res));
+    //Sha1.init();
+    //Sha1.print(lastblockhash + String(ducos1res));
+    Sha1 = Sha1_base;
+    Sha1.print(String(ducos1res));
     // Get SHA1 result
     uint8_t *hash_bytes = Sha1.result();
     if (memcmp(hash_bytes, job, SHA1_HASH_LEN * sizeof(char)) == 0) {
       // If expected hash is equal to the found hash, return the result
-
-      //DEBUG delete
-      Serial.println(ducos1res);
-      //----------
       return ducos1res;
     }
   }
-  return 0;
+  return 0; 
 }
 
 //sorry for copy function but i need the function 
