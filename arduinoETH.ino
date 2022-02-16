@@ -73,12 +73,12 @@ void setup() {
   Serial.begin(9600);
   Serial.println("starting miner...");
   Serial.print(DUCOID);
-  #ifdef __DEBUG__
+  #endif
   waitForClientData();
   String server_version = getValue(client_buffer, SEP_TOKEN, 1);
   #ifdef __DEBUG__
   Serial.println(server_version);
-  #ifdef __DEBUG__
+  #endif
 }
 
 void loop() {
