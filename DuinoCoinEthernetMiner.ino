@@ -161,7 +161,7 @@ void testPing(){
       #ifdef __DEBUG__
       Serial.println("error: ");
       #endif
-      delay(1)
+      delay(1);
   }
 }
 
