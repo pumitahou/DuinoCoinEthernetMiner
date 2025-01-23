@@ -8,10 +8,6 @@ native lang: Hola este proyecto es uno de los mas complicados de arduino que e e
 
 for mining you need put manual ip and port pool in the code 
 
-// the pool ip final 
-byte pool[] = {162,55,103,174};
-unsigned short port = 6000;
-
 and change name to this Variable Username to start Mining
 
 String Username = "Puma";
