@@ -5,7 +5,9 @@ the proyect is arduino miner to dunicoin made with revox
 thanks you Joybed to fix the hashrate problem
 */
 
-#define __DEBUG__ //enables or disables serial console, disabling it may result in higher hashrates, uncomment if you want serial enabled
+//#define __DEBUG__ //enables or disables serial console, disabling it may result in higher hashrates, uncomment if you want serial enabled
+//#define __MANUAL_POOL
+
 
 #pragma GCC optimize ("-Ofast")
 
@@ -78,18 +80,24 @@ void setup() {
   Serial.println("starting miner...");
   Serial.print(DUCOID);
   #endif
+
+  //microfix
+  
   resolvePool();
 
-  waitForClientData();
-  String server_version = getValue(client_buffer, SEP_TOKEN, 1);
-
-  #ifdef __DEBUG__
-  Serial.println(server_version);
-  #endif
+  
 }
 
 void loop() {
+
   if(client.connect(pool,port)){
+  client.print(VER);
+  waitForClientData();
+
+  #ifdef __DEBUG__
+  String server_version = getValue(client_buffer, SEP_TOKEN, 1);
+  Serial.println(server_version);
+  #endif
   while (client.connected()){
     memset(job, 0, job_maxsize);
     #if defined(ARDUINO_ARCH_AVR)
@@ -104,7 +112,7 @@ void loop() {
     String expected_hash = getValue(client_buffer, SEP_TOKEN, 1);
     unsigned int difficulty = getValue(client_buffer, SEP_TOKEN, 2).toInt();
     #ifdef __DEBUG__
-    
+    Serial.println("JOB_RECIVED RAW: "+ client_buffer);
     Serial.println("Job received: "
                  + last_block_hash
                  + " "
@@ -117,15 +125,18 @@ void loop() {
     //DEBUG
     Serial.println("starting hashing");
     //----
-    ducos1result = ducos1a(last_block_hash.c_str(), expected_hash.c_str(), difficulty);
-    last_block_hash = "";
-    expected_hash = "";
-    difficulty = 0;
+    
     //DEBUG
     #ifdef __DEBUG__
     Serial.println("end hashing");
     #endif
+    
+    ducos1result = ducos1a(last_block_hash.c_str(), expected_hash.c_str(), difficulty);
     uint32_t elapsedTime = micros() - startTime;
+    last_block_hash = "";
+    expected_hash = "";
+    difficulty = 10;
+
     float elapsed_time_s = elapsedTime / 1000000.0f;
     float hashrate = ducos1result / elapsed_time_s;
 
@@ -184,7 +195,7 @@ void JOB_REQUEST() {
                         + SEPARATOR + key;
       client.print(petition);
       #ifdef __DEBUG__
-      Serial.println(petition);
+      
       #endif   
 }
 
@@ -269,6 +280,8 @@ void waitForClientData(void) {
       break;
     }
   }
+
+  Serial.println("client buffer: "+client_buffer);
 }
 
 
@@ -318,7 +331,27 @@ void resolvePool() {
     Serial.print(pool[2]); Serial.print(".");
     Serial.print(pool[3]);
     Serial.print(" Port: "); Serial.println(port);
+
+
+    
     #endif
+
+      #ifdef __MANUAL_POOL
+      
+      #ifdef __DEBUG__
+      Serial.print("dont care is debug i select my favorite pool");
+      #endif
+      //in this case my personal proxy 192.168.0.253
+      pool[0] = 192;
+      pool[1] = 168;
+      pool[2] = 0;
+      pool[3] = 253;
+      
+
+      port = 8080;
+    #endif
+
+
   } else {
     #ifdef __DEBUG__
     Serial.println("Connection failed");
