@@ -122,9 +122,12 @@ void loop() {
     #endif
     //the start time
     uint32_t startTime = micros();
+
+    #ifdef __DEBUG__
     //DEBUG
     Serial.println("starting hashing");
     //----
+    #endif
     
     //DEBUG
     #ifdef __DEBUG__
