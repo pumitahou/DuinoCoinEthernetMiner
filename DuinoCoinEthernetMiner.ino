@@ -5,7 +5,7 @@ the proyect is arduino miner to dunicoin made with revox
 thanks you Joybed to fix the hashrate problem
 */
 
-//#define __DEBUG__ //enables or disables serial console, disabling it may result in higher hashrates, uncomment if you want serial enabled
+//define __DEBUG__ //enables or disables serial console, disabling it may result in higher hashrates, uncomment if you want serial enabled
 //#define __MANUAL_POOL
 
 
@@ -42,19 +42,16 @@ String Username = "Puma"; //put your username here
 const char* RIG_IDENTIFIER = "None"; //put your rig identifier here
 String key = "None";
 
-String lastblockhash = "";
-String newblockhash = "";
 
 String DUCOID = "";
 
-uintDiff difficulty = 0;
 uintDiff ducos1result = 0;
 
 const uint16_t job_maxsize = 104;
 uint8_t job[job_maxsize];
 
 //client variables SETTINGS
-const char * miner_version = "PumaFron miner 3.0";
+const char * miner_version = "Pumitahou 3.0";
 String VER = "3.0";
 String start_diff = "AVR";
 
