@@ -5,7 +5,7 @@ the proyect is arduino miner to dunicoin made with revox
 thanks you Joybed to fix the hashrate problem
 */
 
-//define __DEBUG__ //enables or disables serial console, disabling it may result in higher hashrates, uncomment if you want serial enabled
+//#define __DEBUG__ //enables or disables serial console, disabling it may result in higher hashrates, uncomment if you want serial enabled
 //#define __MANUAL_POOL
 
 
