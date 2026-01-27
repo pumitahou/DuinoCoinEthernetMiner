@@ -1,6 +1,6 @@
 // Copyright © Luiz Henrique Cassettari. All rights reserved.
 // Licensed under the MIT license.
-#pragma GCC optimize ("-Ofast")
+//#pragma GCC optimize ("-Ofast")
 #include "uniqueID.h"
 
 ArduinoUniqueID::ArduinoUniqueID()

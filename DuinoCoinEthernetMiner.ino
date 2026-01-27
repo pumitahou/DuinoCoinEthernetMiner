@@ -281,80 +281,70 @@ void waitForClientData(void) {
     }
   }
 
+  #ifdef __DEBUG__
   Serial.println("client buffer: "+client_buffer);
+  #endif
 }
 
 
 void resolvePool() {
-  const char* server = "server.duinocoin.com";
-  
-  if (client.connect(server, 80)) {
-    client.print("GET /getPool HTTP/1.1\r\n"
-                 "Host: server.duinocoin.com\r\n"
-                 "Connection: close\r\n\r\n");
-
-    while (client.connected() && !client.available()) delay(1);
-
-    // Skip HTTP headers
-    while (client.connected()) {
-      String line = client.readStringUntil('\n');
-      if (line == "\r") break; // End of headers
-    }
-
-    // Read JSON body
-    String jsonResponse = client.readString();
-    client.stop();
-
-    // Manual JSON parsing
-    int ipStart = jsonResponse.indexOf("\"ip\":\"") + 6;
-    int ipEnd = jsonResponse.indexOf('"', ipStart);
-    String ipStr = jsonResponse.substring(ipStart, ipEnd);
-
-    int portStart = jsonResponse.indexOf("\"port\":") + 7;
-    int portEnd = jsonResponse.indexOf(',', portStart);
-    port = jsonResponse.substring(portStart, portEnd).toInt();
-
-    // Parse IP without sscanf
-    int dot1 = ipStr.indexOf('.');
-    int dot2 = ipStr.indexOf('.', dot1 + 1);
-    int dot3 = ipStr.indexOf('.', dot2 + 1);
+  // BLOQUE 1: Si se define MANUAL_POOL, solo compilamos esto y ahorramos todo el código HTTP
+  #ifdef __MANUAL_POOL
+    pool[0] = 192;
+    pool[1] = 168;
+    pool[2] = 0;
+    pool[3] = 253;
+    port = 8080;
     
-    pool[0] = ipStr.substring(0, dot1).toInt();
-    pool[1] = ipStr.substring(dot1 + 1, dot2).toInt();
-    pool[2] = ipStr.substring(dot2 + 1, dot3).toInt();
-    pool[3] = ipStr.substring(dot3 + 1).toInt();
-
     #ifdef __DEBUG__
-    Serial.print("Pool: ");
-    Serial.print(pool[0]); Serial.print(".");
-    Serial.print(pool[1]); Serial.print(".");
-    Serial.print(pool[2]); Serial.print(".");
-    Serial.print(pool[3]);
-    Serial.print(" Port: "); Serial.println(port);
-
-
-    
+      Serial.println(F("Manual Pool Selected")); // F() ahorra RAM
     #endif
 
-      #ifdef __MANUAL_POOL
+  // BLOQUE 2: Si NO es manual, compilamos la lógica de red
+  #else 
+    const char* server = "server.duinocoin.com";
+
+    if (client.connect(server, 80)) {
+      // Usamos F() para guardar strings en Flash y no ocupar RAM al ejecutarse
+      client.print(F("GET /getPool HTTP/1.1\r\n"
+                   "Host: server.duinocoin.com\r\n"
+                   "Connection: close\r\n\r\n"));
+
+      // client.find busca una cadena en el stream y descarta todo lo anterior.
+      // Buscamos el final de los headers HTTP (\r\n\r\n)
+      if (client.find("\r\n\r\n")) {
+        
+        // Buscamos la clave "ip":"
+        if (client.find("\"ip\":\"")) {
+          // parseInt lee caracteres numéricos hasta encontrar un no-numérico (el punto o la comilla)
+          // Esto parsea "192.168.0.1" automáticamente sin usar String ni buffers
+          pool[0] = client.parseInt();
+          pool[1] = client.parseInt();
+          pool[2] = client.parseInt();
+          pool[3] = client.parseInt();
+        }
+
+        // Buscamos la clave "port":
+        if (client.find("\"port\":")) {
+          port = client.parseInt();
+        }
+      }
       
+      client.stop();
+
       #ifdef __DEBUG__
-      Serial.print("dont care is debug i select my favorite pool");
+        Serial.print(F("Pool: "));
+        Serial.print(pool[0]); Serial.print('.');
+        Serial.print(pool[1]); Serial.print('.');
+        Serial.print(pool[2]); Serial.print('.');
+        Serial.print(pool[3]);
+        Serial.print(F(" Port: ")); Serial.println(port);
       #endif
-      //in this case my personal proxy 192.168.0.253
-      pool[0] = 192;
-      pool[1] = 168;
-      pool[2] = 0;
-      pool[3] = 253;
-      
 
-      port = 8080;
-    #endif
-
-
-  } else {
-    #ifdef __DEBUG__
-    Serial.println("Connection failed");
-    #endif
-  }
+    } else {
+      #ifdef __DEBUG__
+        Serial.println(F("Connection failed"));
+      #endif
+    }
+  #endif
 }
