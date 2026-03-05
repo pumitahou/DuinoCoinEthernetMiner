@@ -1,0 +1,824 @@
+#include "duco_hash.h"
+
+#pragma GCC optimize ("-Ofast")
+
+#define sha1_rotl(bits,word)     (((word) << (bits)) | ((word) >> (32 - (bits))))
+
+void duco_hash_block(duco_hash_state_t * hasher) {
+	// NOTE: keeping this static improves performance quite a lot
+	static uint32_t w[16];
+
+	for (uint8_t i = 0, i4 = 0; i < 16; i++, i4 += 4) {
+		w[i] = (uint32_t(hasher->buffer[i4]) << 24) |
+			(uint32_t(hasher->buffer[i4 + 1]) << 16) |
+			(uint32_t(hasher->buffer[i4 + 2]) << 8) |
+			(uint32_t(hasher->buffer[i4 + 3]));
+	}
+	
+	uint32_t a = hasher->tempState[0];
+	uint32_t b = hasher->tempState[1];
+	uint32_t c = hasher->tempState[2];
+	uint32_t d = hasher->tempState[3];
+	uint32_t e = hasher->tempState[4];
+
+	for (uint8_t i = 10; i < 80; i++) {
+		if (i >= 16) {
+			w[i & 15] = sha1_rotl(1, w[(i-3) & 15] ^ w[(i-8) & 15] ^ w[(i-14) & 15] ^ w[(i-16) & 15]);
+		}
+
+		uint32_t temp = sha1_rotl(5, a) + e + w[i & 15];
+		if (i < 20) {
+			temp += (b & c) | ((~b) & d);
+			temp += 0x5a827999;
+		} else if(i < 40) {
+			temp += b ^ c ^ d;
+			temp += 0x6ed9eba1;
+		} else if(i < 60) {
+			temp += (b & c) | (b & d) | (c & d);
+			temp += 0x8f1bbcdc;
+		} else {
+			temp += b ^ c ^ d;
+			temp += 0xca62c1d6;
+		}
+
+		e = d;
+		d = c;
+		c = sha1_rotl(30, b);
+		b = a;
+		a = temp;
+	}
+
+	a += 0x67452301;
+	b += 0xefcdab89;
+	c += 0x98badcfe;
+	d += 0x10325476;
+	e += 0xc3d2e1f0;
+
+	hasher->result[0 * 4 + 0] = a >> 24;
+	hasher->result[0 * 4 + 1] = a >> 16;
+	hasher->result[0 * 4 + 2] = a >> 8;
+	hasher->result[0 * 4 + 3] = a;
+	hasher->result[1 * 4 + 0] = b >> 24;
+	hasher->result[1 * 4 + 1] = b >> 16;
+	hasher->result[1 * 4 + 2] = b >> 8;
+	hasher->result[1 * 4 + 3] = b;
+	hasher->result[2 * 4 + 0] = c >> 24;
+	hasher->result[2 * 4 + 1] = c >> 16;
+	hasher->result[2 * 4 + 2] = c >> 8;
+	hasher->result[2 * 4 + 3] = c;
+	hasher->result[3 * 4 + 0] = d >> 24;
+	hasher->result[3 * 4 + 1] = d >> 16;
+	hasher->result[3 * 4 + 2] = d >> 8;
+	hasher->result[3 * 4 + 3] = d;
+	hasher->result[4 * 4 + 0] = e >> 24;
+	hasher->result[4 * 4 + 1] = e >> 16;
+	hasher->result[4 * 4 + 2] = e >> 8;
+	hasher->result[4 * 4 + 3] = e;
+}
+
+void duco_hash_init(duco_hash_state_t * hasher, char const * prevHash) {
+	memcpy(hasher->buffer, prevHash, 40);
+
+	if (prevHash == (void*)(0xffffffff)) {
+		// NOTE: THIS IS NEVER CALLED
+		// This is here to keep a live reference to hash_block
+		// Otherwise GCC tries to inline it entirely into the main loop
+		// Which causes massive perf degradation
+		duco_hash_block(nullptr);
+	}
+
+	// Do first 10 rounds as these are going to be the same all time
+
+	uint32_t a = 0x67452301;
+	uint32_t b = 0xefcdab89;
+	uint32_t c = 0x98badcfe;
+	uint32_t d = 0x10325476;
+	uint32_t e = 0xc3d2e1f0;
+
+	static uint32_t w[10];
+
+	for (uint8_t i = 0, i4 = 0; i < 10; i++, i4 += 4) {
+		w[i] = (uint32_t(hasher->buffer[i4]) << 24) |
+			(uint32_t(hasher->buffer[i4 + 1]) << 16) |
+			(uint32_t(hasher->buffer[i4 + 2]) << 8) |
+			(uint32_t(hasher->buffer[i4 + 3]));
+	}
+
+	for (uint8_t i = 0; i < 10; i++) {
+		uint32_t temp = sha1_rotl(5, a) + e + w[i & 15];
+		temp += (b & c) | ((~b) & d);
+		temp += 0x5a827999;
+
+		e = d;
+		d = c;
+		c = sha1_rotl(30, b);
+		b = a;
+		a = temp;
+	}
+
+	hasher->tempState[0] = a;
+	hasher->tempState[1] = b;
+	hasher->tempState[2] = c;
+	hasher->tempState[3] = d;
+	hasher->tempState[4] = e;
+}
+
+void duco_hash_set_nonce(duco_hash_state_t * hasher, char const * nonce) {
+	uint8_t * b = hasher->buffer;
+
+	uint8_t off = SHA1_HASH_LEN * 2;
+	for (uint8_t i = 0; i < 10 && nonce[i] != 0; i++) {
+		b[off++] = nonce[i];
+	}
+
+	uint8_t total_bytes = off;
+
+	b[off++] = 0x80;
+	while (off < 62) {
+		b[off++] = 0;
+	}
+
+	b[62] = total_bytes >> 5;
+	b[63] = total_bytes << 3;
+}
+
+uint8_t const * duco_hash_try_nonce(duco_hash_state_t * hasher, char const * nonce) {
+	duco_hash_set_nonce(hasher, nonce);
+	duco_hash_block(hasher);
+
+	return hasher->result;
+}
+#pragma once
+
+#include <Arduino.h>
+
+#define SHA1_BLOCK_LEN 64
+#define SHA1_HASH_LEN 20
+
+struct duco_hash_state_t {
+	uint8_t buffer[SHA1_BLOCK_LEN];
+	uint8_t result[SHA1_HASH_LEN];
+	uint32_t tempState[5];
+
+	uint8_t block_offset;
+	uint8_t total_bytes;
+};
+
+void duco_hash_init(duco_hash_state_t * hasher, char const * prevHash);
+
+uint8_t const * duco_hash_try_nonce(duco_hash_state_t * hasher, char const * nonce);
+/*
+HELLO GUYS THIS CODE is auto miner, made with pumafron afk, the code mine only using 100% arduino and ethernet shield
+thannks you LDarki for help me to fix connection error
+the proyect is arduino miner to dunicoin made with revox
+thanks you Joybed to fix the hashrate problem
+*/
+
+//#define __DEBUG__ //enables or disables serial console, disabling it may result in higher hashrates, uncomment if you want serial enabled
+//#define __MANUAL_POOL
+
+
+#pragma GCC optimize ("-Ofast")
+
+#ifndef LED_BUILTIN
+#define LED_BUILTIN 13
+
+#endif
+/* For 8-bit microcontrollers we should use 16 bit variables since the
+difficulty is low, for all the other cases should be 32 bits. */
+#if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_MEGAAVR)
+typedef uint16_t uintDiff;
+#else
+typedef uint32_t uintDiff;
+#endif
+// Arduino identifier library - https://github.com/ricaun
+#include "uniqueID.h"
+#include "duco_hash.h"
+#include <SPI.h>
+#include <Ethernet.h>
+
+// Enter a MAC address and IP address for your controller below.
+// The IP address will be dependent on your local network:
+byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
+
+// the pool ip final 
+// http://server.duinocoin.com/getPool
+byte pool[] = {0,0,0,0};
+unsigned short port = 0;
+
+//miner global variables
+String Username = "Puma"; //put your username here
+const char* RIG_IDENTIFIER = "None"; //put your rig identifier here
+String key = "None";
+
+
+String DUCOID = "";
+
+uintDiff ducos1result = 0;
+
+const uint16_t job_maxsize = 104;
+uint8_t job[job_maxsize];
+
+//client variables SETTINGS
+const char * miner_version = "Pumitahou 3.0";
+String VER = "3.0";
+String start_diff = "AVR";
+
+String SEPARATOR = ",";
+String BLOCK = " ‖ ";
+
+bool revicing_data = false;
+String BUFFER_BITS = "";
+String client_buffer = "";
+char END_TOKEN = '\n';
+char SEP_TOKEN = ',';
+
+  EthernetClient client;
+
+void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+  DUCOID = get_DUCOID();
+  //set connection 
+  Ethernet.begin(mac);
+
+  #ifdef __DEBUG__
+  Serial.begin(9600);
+  Serial.println("starting miner...");
+  Serial.print(DUCOID);
+  #endif
+
+  //microfix
+  
+  resolvePool();
+
+  
+}
+
+void loop() {
+
+  if(client.connect(pool,port)){
+  client.print(VER);
+  waitForClientData();
+
+  #ifdef __DEBUG__
+  String server_version = getValue(client_buffer, SEP_TOKEN, 1);
+  Serial.println(server_version);
+  #endif
+  while (client.connected()){
+    memset(job, 0, job_maxsize);
+    #if defined(ARDUINO_ARCH_AVR)
+        PORTB = PORTB & B11011111;
+    #else
+        digitalWrite(LED_BUILTIN, HIGH);
+    #endif
+    
+    JOB_REQUEST();
+    waitForClientData();
+    String last_block_hash = getValue(client_buffer, SEP_TOKEN, 0);
+    String expected_hash = getValue(client_buffer, SEP_TOKEN, 1);
+    unsigned int difficulty = getValue(client_buffer, SEP_TOKEN, 2).toInt();
+    #ifdef __DEBUG__
+    Serial.println("JOB_RECIVED RAW: "+ client_buffer);
+    Serial.println("Job received: "
+                 + last_block_hash
+                 + " "
+                 + expected_hash
+                 + " "
+                 + String(difficulty));
+    #endif
+    //the start time
+    uint32_t startTime = micros();
+
+    #ifdef __DEBUG__
+    //DEBUG
+    Serial.println("starting hashing");
+    //----
+    #endif
+    
+    //DEBUG
+    #ifdef __DEBUG__
+    Serial.println("end hashing");
+    #endif
+    
+    ducos1result = ducos1a(last_block_hash.c_str(), expected_hash.c_str(), difficulty);
+    uint32_t elapsedTime = micros() - startTime;
+    last_block_hash = "";
+    expected_hash = "";
+    difficulty = 10;
+
+    float elapsed_time_s = elapsedTime / 1000000.0f;
+    float hashrate = ducos1result / elapsed_time_s;
+
+    #ifdef __DEBUG__
+    Serial.print("hashrate: ");
+    Serial.print(hashrate);
+    Serial.print(" speed: ");
+    Serial.println(elapsed_time_s);
+    #endif
+
+    client.print(String(ducos1result)
+                   + ","
+                   + String(hashrate)
+                   + "," + String(miner_version)
+                   + ","
+                   + String(RIG_IDENTIFIER)
+                   + ","
+                   + String(DUCOID));
+
+    
+
+    waitForClientData();
+
+    #ifdef __DEBUG__
+    Serial.println(client_buffer);
+    #endif
+    
+    #if defined(ARDUINO_ARCH_AVR)
+        PORTB = PORTB | B00100000;
+    #else
+        digitalWrite(LED_BUILTIN, LOW);
+    #endif
+    delay(90);
+    }
+    }
+}
+
+void testPing(){
+    if(client.connect(pool,port)){
+      #ifdef __DEBUG__
+      Serial.println("testing pool conection");
+      #endif
+      client.println("MOTD");
+    } else {
+      #ifdef __DEBUG__
+      Serial.println("error: ");
+      #endif
+      delay(1);
+  }
+}
+
+void JOB_REQUEST() {
+      String petition = "JOB"
+                        + SEPARATOR + Username
+                        + SEPARATOR + "AVR"
+                        + SEPARATOR + key;
+      client.print(petition);
+      #ifdef __DEBUG__
+      
+      #endif   
+}
+
+String get_DUCOID() {
+  String ID = "DUCOID";
+  char buff[4];
+  for (size_t i = 0; i < 8; i++) {
+    sprintf(buff, "%02X", (uint8_t)UniqueID8[i]);
+    ID += buff;
+  }
+  return ID;
+}
+
+void lowercase_hex_to_bytes(char const * hexDigest, uint8_t * rawDigest) {
+  for (uint8_t i = 0, j = 0; j < SHA1_HASH_LEN; i += 2, j += 1) {
+    uint8_t x = hexDigest[i];
+    uint8_t b = x >> 6;
+    uint8_t r = ((x & 0xf) | (b << 3)) + b;
+
+    x = hexDigest[i + 1];
+    b = x >> 6;
+
+    rawDigest[j] = (r << 4) | (((x & 0xf) | (b << 3)) + b);
+  }
+}
+
+// DUCO-S1A hasher
+uintDiff ducos1a(char const * prevBlockHash, char const * targetBlockHash, uintDiff difficulty) {
+  #if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_MEGAAVR)
+    // If the difficulty is too high for AVR architecture then return 0
+    if (difficulty > 655) return 0;
+  #endif
+
+  uint8_t target[SHA1_HASH_LEN];
+  lowercase_hex_to_bytes(targetBlockHash, target);
+
+  uintDiff const maxNonce = difficulty * 100 + 1;
+  return ducos1a_mine(prevBlockHash, target, maxNonce);
+}
+
+uintDiff ducos1a_mine(char const * prevBlockHash, uint8_t const * target, uintDiff maxNonce) {
+  static duco_hash_state_t hash;
+  duco_hash_init(&hash, prevBlockHash);
+
+  char nonceStr[10 + 1];
+  for (uintDiff nonce = 0; nonce < maxNonce; nonce++) {
+    ultoa(nonce, nonceStr, 10);
+
+    uint8_t const * hash_bytes = duco_hash_try_nonce(&hash, nonceStr);
+    if (memcmp(hash_bytes, target, SHA1_HASH_LEN) == 0) {
+      return nonce;
+    }
+  }
+
+  return 0;
+}
+
+//sorry for copy function but i need the function 
+String getValue(String data, char separator, int index)
+{
+  int found = 0;
+  int strIndex[] = {0, -1};
+  int max_index = data.length() - 1;
+
+  for (int i = 0; i <= max_index && found <= index; i++) {
+    if (data.charAt(i) == separator || i == max_index) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == max_index) ? i + 1 : i;
+    }
+  }
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void waitForClientData(void) {
+  client_buffer = "";
+  while (client.connected()) {
+    if (client.available()) {
+      client_buffer = client.readStringUntil(END_TOKEN);
+      if (client_buffer.length() == 1 && client_buffer[0] == END_TOKEN)
+        client_buffer = "???\n"; // NOTE: Should never happen
+      break;
+    }
+  }
+
+  #ifdef __DEBUG__
+  Serial.println("client buffer: "+client_buffer);
+  #endif
+}
+
+
+void resolvePool() {
+  // BLOQUE 1: Si se define MANUAL_POOL, solo compilamos esto y ahorramos todo el código HTTP
+  #ifdef __MANUAL_POOL
+    pool[0] = 192;
+    pool[1] = 168;
+    pool[2] = 0;
+    pool[3] = 253;
+    port = 8080;
+    
+    #ifdef __DEBUG__
+      Serial.println(F("Manual Pool Selected")); // F() ahorra RAM
+    #endif
+
+  // BLOQUE 2: Si NO es manual, compilamos la lógica de red
+  #else 
+    const char* server = "server.duinocoin.com";
+
+    if (client.connect(server, 80)) {
+      // Usamos F() para guardar strings en Flash y no ocupar RAM al ejecutarse
+      client.print(F("GET /getPool HTTP/1.1\r\n"
+                   "Host: server.duinocoin.com\r\n"
+                   "Connection: close\r\n\r\n"));
+
+      // client.find busca una cadena en el stream y descarta todo lo anterior.
+      // Buscamos el final de los headers HTTP (\r\n\r\n)
+      if (client.find("\r\n\r\n")) {
+        
+        // Buscamos la clave "ip":"
+        if (client.find("\"ip\":\"")) {
+          // parseInt lee caracteres numéricos hasta encontrar un no-numérico (el punto o la comilla)
+          // Esto parsea "192.168.0.1" automáticamente sin usar String ni buffers
+          pool[0] = client.parseInt();
+          pool[1] = client.parseInt();
+          pool[2] = client.parseInt();
+          pool[3] = client.parseInt();
+        }
+
+        // Buscamos la clave "port":
+        if (client.find("\"port\":")) {
+          port = client.parseInt();
+        }
+      }
+      
+      client.stop();
+
+      #ifdef __DEBUG__
+        Serial.print(F("Pool: "));
+        Serial.print(pool[0]); Serial.print('.');
+        Serial.print(pool[1]); Serial.print('.');
+        Serial.print(pool[2]); Serial.print('.');
+        Serial.print(pool[3]);
+        Serial.print(F(" Port: ")); Serial.println(port);
+      #endif
+
+    } else {
+      #ifdef __DEBUG__
+        Serial.println(F("Connection failed"));
+      #endif
+    }
+  #endif
+}# DuinoCoinEthernetMiner
+duinocoin miner using ethernet shield
+Hello everyone, this proyect is the most hardest arduino proyect that i done before, it's a honor have been programer in this proyect and i help in this comunity, at the first day on the proyect many people told me that this proyect whouldn't work, they said that was impossible, but I dont give up and I needed money from my dad to bought an arduino ethernet shield, thanks dad for the support, and Ldarky for the help in the code and joybed for the algorithm
+
+native lang: Hola este proyecto es uno de los mas complicados de arduino que e echo y es un honor haber participado y estado en esta comunidad, el codigo al principio muchos me dijieron que era imposible y que no habia, pero no me rendi y hasta le pedi dinero a mi papa para comprar un shield de ethernet, le agradesco a mi padre por ell apoyo a Ldarky por ayudarme con un error de coneccion, y JoyBed por el algoritmo
+
+
+for mining you need put manual ip and port pool in the code 
+
+and change name to this Variable Username to start Mining
+
+String Username = "Puma";
+
+
+const char* RIG_IDENTIFIER = "AVR ethernet";
+// Copyright © Luiz Henrique Cassettari. All rights reserved.
+// Licensed under the MIT license.
+//#pragma GCC optimize ("-Ofast")
+#include "uniqueID.h"
+
+ArduinoUniqueID::ArduinoUniqueID()
+{
+#if defined(ARDUINO_ARCH_AVR)
+  for (size_t i = 0; i < UniqueIDsize; i++)
+  {
+    id[i] = boot_signature_byte_get(0x0E + i + (UniqueIDsize == 9 && i > 5 ? 1 : 0));
+  }
+#elif defined(ARDUINO_ARCH_ESP8266)
+  uint32_t chipid = ESP.getChipId();
+  id[0] = 0;
+  id[1] = 0;
+  id[2] = 0;
+  id[3] = 0;
+  id[4] = chipid >> 24;
+  id[5] = chipid >> 16;
+  id[6] = chipid >> 8;
+  id[7] = chipid;
+
+#elif defined(ARDUINO_ARCH_ESP32)
+  uint64_t chipid = ESP.getEfuseMac();
+  id[0] = 0;
+  id[1] = 0;
+  id[2] = chipid;
+  id[3] = chipid >> 8;
+  id[4] = chipid >> 16;
+  id[5] = chipid >> 24;
+  id[6] = chipid >> 32;
+  id[7] = chipid >> 40;
+
+#elif defined(ARDUINO_ARCH_SAM)
+  uint16_t status ;
+  /* Send the Start Read unique Identifier command (STUI) by writing the Flash Command Register with the STUI command.*/
+  EFC1->EEFC_FCR = (0x5A << 24) | EFC_FCMD_STUI;
+  do
+  {
+    status = EFC1->EEFC_FSR ;
+  } while ( (status & EEFC_FSR_FRDY) == EEFC_FSR_FRDY ) ;
+
+  /* The Unique Identifier is located in the first 128 bits of the Flash memory mapping. So, at the address 0x400000-0x400003. */
+  uint32_t pdwUniqueID[4];
+  pdwUniqueID[0] = *(uint32_t *)IFLASH1_ADDR;
+  pdwUniqueID[1] = *(uint32_t *)(IFLASH1_ADDR + 4);
+  pdwUniqueID[2] = *(uint32_t *)(IFLASH1_ADDR + 8);
+  pdwUniqueID[3] = *(uint32_t *)(IFLASH1_ADDR + 12);
+  for (uint8_t i = 0; i < 4; i++)
+  {
+    id[i*4+0] = (uint8_t)(pdwUniqueID[i] >> 24);
+    id[i*4+1] = (uint8_t)(pdwUniqueID[i] >> 16);
+    id[i*4+2] = (uint8_t)(pdwUniqueID[i] >> 8);
+    id[i*4+3] = (uint8_t)(pdwUniqueID[i] >> 0);
+  }
+
+  /* To stop the Unique Identifier mode, the user needs to send the Stop Read unique Identifier
+  command (SPUI) by writing the Flash Command Register with the SPUI command. */
+  EFC1->EEFC_FCR = (0x5A << 24) | EFC_FCMD_SPUI ;
+
+  /* When the Stop read Unique Unique Identifier command (SPUI) has been performed, the
+  FRDY bit in the Flash Programming Status Register (EEFC_FSR) rises. */
+  do
+  {
+    status = EFC1->EEFC_FSR ;
+  } while ( (status & EEFC_FSR_FRDY) != EEFC_FSR_FRDY );
+
+#elif defined(ARDUINO_ARCH_SAMD)
+
+#if defined (__SAMD51__)
+  // SAMD51 from section 9.6 of the datasheet
+  #define SERIAL_NUMBER_WORD_0  *(volatile uint32_t*)(0x008061FC)
+  #define SERIAL_NUMBER_WORD_1  *(volatile uint32_t*)(0x00806010)
+  #define SERIAL_NUMBER_WORD_2  *(volatile uint32_t*)(0x00806014)
+  #define SERIAL_NUMBER_WORD_3  *(volatile uint32_t*)(0x00806018)
+#else
+//#elif defined (__SAMD21E17A__) || defined(__SAMD21G18A__)  || defined(__SAMD21E18A__) || defined(__SAMD21J18A__)
+  // SAMD21 from section 9.3.3 of the datasheet
+  #define SERIAL_NUMBER_WORD_0  *(volatile uint32_t*)(0x0080A00C)
+  #define SERIAL_NUMBER_WORD_1  *(volatile uint32_t*)(0x0080A040)
+  #define SERIAL_NUMBER_WORD_2  *(volatile uint32_t*)(0x0080A044)
+  #define SERIAL_NUMBER_WORD_3  *(volatile uint32_t*)(0x0080A048)
+#endif
+
+  uint32_t pdwUniqueID[4];
+  pdwUniqueID[0] = SERIAL_NUMBER_WORD_0;
+  pdwUniqueID[1] = SERIAL_NUMBER_WORD_1;
+  pdwUniqueID[2] = SERIAL_NUMBER_WORD_2;
+  pdwUniqueID[3] = SERIAL_NUMBER_WORD_3;
+
+  for (uint8_t i = 0; i < 4; i++)
+  {
+    id[i*4+0] = (uint8_t)(pdwUniqueID[i] >> 24);
+    id[i*4+1] = (uint8_t)(pdwUniqueID[i] >> 16);
+    id[i*4+2] = (uint8_t)(pdwUniqueID[i] >> 8);
+    id[i*4+3] = (uint8_t)(pdwUniqueID[i] >> 0);
+  }
+
+#elif defined(ARDUINO_ARCH_STM32)
+  uint32_t pdwUniqueID[3];
+  pdwUniqueID[0] = HAL_GetUIDw0();
+  pdwUniqueID[1] = HAL_GetUIDw1();
+  pdwUniqueID[2] = HAL_GetUIDw2();
+  for (uint8_t i = 0; i < 3; i++)
+  {
+    id[i*4+0] = (uint8_t)(pdwUniqueID[i] >> 24);
+    id[i*4+1] = (uint8_t)(pdwUniqueID[i] >> 16);
+    id[i*4+2] = (uint8_t)(pdwUniqueID[i] >> 8);
+    id[i*4+3] = (uint8_t)(pdwUniqueID[i] >> 0);
+  }
+#elif defined(ARDUINO_TEENSY40) || defined (ARDUINO_TEENSY41)
+  uint32_t uid0 = HW_OCOTP_CFG0;
+  uint32_t uid1 = HW_OCOTP_CFG1;
+  id[0] = uid0 >> 24;
+  id[1] = uid0 >> 16;
+  id[2] = uid0 >> 8;
+  id[3] = uid0;
+  id[4] = uid1 >> 24;
+  id[5] = uid1 >> 16;
+  id[6] = uid1 >> 8;
+  id[7] = uid1;
+#elif defined(TEENSYDUINO)
+  uint8_t mac[6];
+  uint8_t sn[4];
+  uint32_t num = 0;
+  __disable_irq();
+  #if defined(HAS_KINETIS_FLASH_FTFA) || defined(HAS_KINETIS_FLASH_FTFL)
+    FTFL_FSTAT = FTFL_FSTAT_RDCOLERR | FTFL_FSTAT_ACCERR | FTFL_FSTAT_FPVIOL;
+    FTFL_FCCOB0 = 0x41;
+    FTFL_FCCOB1 = 15;
+    FTFL_FSTAT = FTFL_FSTAT_CCIF;
+    while (!(FTFL_FSTAT & FTFL_FSTAT_CCIF)) ; // wait
+    num = *(uint32_t *)&FTFL_FCCOB7;
+  #elif defined(HAS_KINETIS_FLASH_FTFE)
+    kinetis_hsrun_disable();
+    FTFL_FSTAT = FTFL_FSTAT_RDCOLERR | FTFL_FSTAT_ACCERR | FTFL_FSTAT_FPVIOL;
+    *(uint32_t *)&FTFL_FCCOB3 = 0x41070000;
+    FTFL_FSTAT = FTFL_FSTAT_CCIF;
+    while (!(FTFL_FSTAT & FTFL_FSTAT_CCIF)) ; // wait
+    num = *(uint32_t *)&FTFL_FCCOBB;
+    kinetis_hsrun_enable();
+  #endif
+  __enable_irq();
+  sn[0] = num >> 24;
+  sn[1] = num >> 16;
+  sn[2] = num >> 8;
+  sn[3] = num;
+  mac[0] = 0x04;
+  mac[1] = 0xE9;
+  mac[2] = 0xE5;
+  mac[3] = sn[1];
+  mac[4] = sn[2];
+  mac[5] = sn[3];
+  id[0] = SIM_UIDML >> 24;
+  id[1] = SIM_UIDML >> 16;
+  id[2] = SIM_UIDML >> 8;
+  id[3] = SIM_UIDML;
+  id[4] = SIM_UIDL >> 24;
+  id[5] = SIM_UIDL >> 16;
+  id[6] = 0x40; // marked as version v4, but this uuid is not random based !!!
+  id[7] = SIM_UIDL >> 8;
+  id[8] = 0x80; //variant
+  id[9] = SIM_UIDL;
+  id[10] = mac[0];
+  id[11] = mac[1];
+  id[12] = mac[2];
+  id[13] = mac[3];
+  id[14] = mac[4];
+  id[15] = mac[5];
+#elif defined(ARDUINO_ARCH_MBED_RP2040)
+  getUniqueSerialNumber(id);
+#elif defined(ARDUINO_ARCH_MEGAAVR)
+  id[0] = SIGROW.SERNUM0;
+  id[1] = SIGROW.SERNUM1;
+  id[2] = SIGROW.SERNUM2;
+  id[3] = SIGROW.SERNUM3;
+  id[4] = SIGROW.SERNUM4;
+  id[5] = SIGROW.SERNUM5;
+  id[6] = SIGROW.SERNUM6;
+  id[7] = SIGROW.SERNUM7;
+  id[8] = SIGROW.SERNUM8;
+  id[9] = SIGROW.SERNUM9;
+#endif
+}
+
+ArduinoUniqueID _UniqueID;
+// Copyright © Luiz Henrique Cassettari. All rights reserved.
+// Licensed under the MIT license.
+//#pragma GCC optimize ("-Ofast")
+#ifndef _ARDUINO_UNIQUE_ID_H_
+#define _ARDUINO_UNIQUE_ID_H_
+
+#include <Arduino.h>
+
+#if defined(ARDUINO_ARCH_AVR)
+#include <avr/boot.h>
+#ifndef SIGRD
+#define SIGRD 5
+#endif
+#elif defined(ARDUINO_ARCH_ESP8266)
+#elif defined(ARDUINO_ARCH_ESP32)
+#elif defined(ARDUINO_ARCH_SAM)
+#elif defined(ARDUINO_ARCH_SAMD)
+#elif defined(ARDUINO_ARCH_STM32)
+#elif defined(TEENSYDUINO)
+#elif defined(ARDUINO_ARCH_MBED_RP2040)
+//#include <pico/unique_id.h>
+#elif defined(ARDUINO_ARCH_MEGAAVR)
+#else
+#error "ArduinoUniqueID only works on AVR, SAM, SAMD, STM32, Teensy, megaAVR and ESP Architecture"
+#endif
+
+#if defined(ARDUINO_ARCH_AVR)
+
+#if defined(__AVR_ATmega328PB__)
+#define UniqueIDsize 10
+#else
+#define UniqueIDsize 9
+#endif
+
+#define UniqueIDbuffer UniqueIDsize
+
+#elif defined(ARDUINO_ARCH_ESP8266)
+#define UniqueIDsize 4
+#define UniqueIDbuffer 8
+#elif defined(ARDUINO_ARCH_ESP32)
+#define UniqueIDsize 6
+#define UniqueIDbuffer 8
+#elif defined(ARDUINO_ARCH_SAM)
+#define UniqueIDsize 16
+#define UniqueIDbuffer 16
+#elif defined(ARDUINO_ARCH_SAMD)
+#define UniqueIDsize 16
+#define UniqueIDbuffer 16
+#elif defined(ARDUINO_ARCH_STM32)
+#define UniqueIDsize 12
+#define UniqueIDbuffer 12
+#elif defined(ARDUINO_TEENSY40) || defined (ARDUINO_TEENSY41)
+#define UniqueIDsize 8
+#define UniqueIDbuffer 8
+#elif defined(TEENSYDUINO)
+#define UniqueIDsize 16
+#define UniqueIDbuffer 16
+#elif defined(ARDUINO_ARCH_MBED_RP2040)
+#define UniqueIDsize 32
+#define UniqueIDbuffer 32
+#elif defined(ARDUINO_ARCH_MEGAAVR)
+#define UniqueIDsize 10
+#define UniqueIDbuffer 10
+#endif
+
+#define UniqueID8 (_UniqueID.id + UniqueIDbuffer - 8)
+#define UniqueID (_UniqueID.id + UniqueIDbuffer - UniqueIDsize)
+
+#define UniqueIDdump(stream)                      \
+	{                                             \
+		stream.print("UniqueID: ");       \
+		for (size_t i = 0; i < UniqueIDsize; i++) \
+		{                                         \
+			if (UniqueID[i] < 0x10)               \
+				stream.print("0");                \
+			stream.print(UniqueID[i], HEX);       \
+			stream.print(" ");                    \
+		}                                         \
+		stream.println();                         \
+	}
+
+#define UniqueID8dump(stream)                \
+	{                                        \
+		stream.print("UniqueID: ");  \
+		for (size_t i = 0; i < 8; i++)       \
+		{                                    \
+			if (UniqueID8[i] < 0x10)         \
+				stream.print("0");           \
+			stream.print(UniqueID8[i], HEX); \
+			stream.print(" ");               \
+		}                                    \
+		stream.println();                    \
+	}
+
+class ArduinoUniqueID
+{
+  public:
+	ArduinoUniqueID();
+	uint8_t id[UniqueIDbuffer];
+};
+
+extern ArduinoUniqueID _UniqueID;
+
+#endif

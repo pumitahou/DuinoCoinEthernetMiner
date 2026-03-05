@@ -9,12 +9,21 @@ thanks you Joybed to fix the hashrate problem
 //#define __MANUAL_POOL
 
 
-#pragma GCC optimize ("-Ofast")
+#ifdef __DEBUG__
+  #define DEBUG_BEGIN(baud) Serial.begin(baud)
+  #define DEBUG_PRINT(x)    Serial.print(x)
+  #define DEBUG_PRINTLN(x)  Serial.println(x)
+#else
+  #define DEBUG_BEGIN(baud) 
+  #define DEBUG_PRINT(x)    
+  #define DEBUG_PRINTLN(x)  
+#endif
 
+#pragma GCC optimize ("-Ofast")
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 13
-
 #endif
+
 /* For 8-bit microcontrollers we should use 16 bit variables since the
 difficulty is low, for all the other cases should be 32 bits. */
 #if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_MEGAAVR)
@@ -22,6 +31,7 @@ typedef uint16_t uintDiff;
 #else
 typedef uint32_t uintDiff;
 #endif
+
 // Arduino identifier library - https://github.com/ricaun
 #include "uniqueID.h"
 #include "duco_hash.h"
@@ -42,7 +52,6 @@ String Username = "Puma"; //put your username here
 const char* RIG_IDENTIFIER = "None"; //put your rig identifier here
 String key = "None";
 
-
 String DUCOID = "";
 
 uintDiff ducos1result = 0;
@@ -51,7 +60,7 @@ const uint16_t job_maxsize = 104;
 uint8_t job[job_maxsize];
 
 //client variables SETTINGS
-const char * miner_version = "Pumitahou 3.0";
+const char * miner_version = "Pumitahou 3.1";
 String VER = "3.0";
 String start_diff = "AVR";
 
@@ -64,7 +73,7 @@ String client_buffer = "";
 char END_TOKEN = '\n';
 char SEP_TOKEN = ',';
 
-  EthernetClient client;
+EthernetClient client;
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -72,131 +81,109 @@ void setup() {
   //set connection 
   Ethernet.begin(mac);
 
-  #ifdef __DEBUG__
-  Serial.begin(9600);
-  Serial.println("starting miner...");
-  Serial.print(DUCOID);
-  #endif
+  DEBUG_BEGIN(9600);
+  DEBUG_PRINTLN("starting miner...");
+  DEBUG_PRINT(DUCOID);
 
   //microfix
-  
   resolvePool();
-
-  
 }
 
 void loop() {
 
   if(client.connect(pool,port)){
-  client.print(VER);
-  waitForClientData();
-
-  #ifdef __DEBUG__
-  String server_version = getValue(client_buffer, SEP_TOKEN, 1);
-  Serial.println(server_version);
-  #endif
-  while (client.connected()){
-    memset(job, 0, job_maxsize);
-    #if defined(ARDUINO_ARCH_AVR)
-        PORTB = PORTB & B11011111;
-    #else
-        digitalWrite(LED_BUILTIN, HIGH);
-    #endif
-    
-    JOB_REQUEST();
-    waitForClientData();
-    String last_block_hash = getValue(client_buffer, SEP_TOKEN, 0);
-    String expected_hash = getValue(client_buffer, SEP_TOKEN, 1);
-    unsigned int difficulty = getValue(client_buffer, SEP_TOKEN, 2).toInt();
-    #ifdef __DEBUG__
-    Serial.println("JOB_RECIVED RAW: "+ client_buffer);
-    Serial.println("Job received: "
-                 + last_block_hash
-                 + " "
-                 + expected_hash
-                 + " "
-                 + String(difficulty));
-    #endif
-    //the start time
-    uint32_t startTime = micros();
-
-    #ifdef __DEBUG__
-    //DEBUG
-    Serial.println("starting hashing");
-    //----
-    #endif
-    
-    //DEBUG
-    #ifdef __DEBUG__
-    Serial.println("end hashing");
-    #endif
-    
-    ducos1result = ducos1a(last_block_hash.c_str(), expected_hash.c_str(), difficulty);
-    uint32_t elapsedTime = micros() - startTime;
-    last_block_hash = "";
-    expected_hash = "";
-    difficulty = 10;
-
-    float elapsed_time_s = elapsedTime / 1000000.0f;
-    float hashrate = ducos1result / elapsed_time_s;
-
-    #ifdef __DEBUG__
-    Serial.print("hashrate: ");
-    Serial.print(hashrate);
-    Serial.print(" speed: ");
-    Serial.println(elapsed_time_s);
-    #endif
-
-    client.print(String(ducos1result)
-                   + ","
-                   + String(hashrate)
-                   + "," + String(miner_version)
-                   + ","
-                   + String(RIG_IDENTIFIER)
-                   + ","
-                   + String(DUCOID));
-
-    
-
+    client.print(VER);
     waitForClientData();
 
+    // Este bloque es necesario porque server_version solo existe en modo DEBUG
     #ifdef __DEBUG__
-    Serial.println(client_buffer);
+    String server_version = getValue(client_buffer, SEP_TOKEN, 1);
+    DEBUG_PRINTLN(server_version);
     #endif
-    
-    #if defined(ARDUINO_ARCH_AVR)
-        PORTB = PORTB | B00100000;
-    #else
-        digitalWrite(LED_BUILTIN, LOW);
-    #endif
-    delay(90);
+
+    while (client.connected()){
+      memset(job, 0, job_maxsize);
+      #if defined(ARDUINO_ARCH_AVR)
+          PORTB = PORTB & B11011111;
+      #else
+          digitalWrite(LED_BUILTIN, HIGH);
+      #endif
+      
+      JOB_REQUEST();
+      waitForClientData();
+      String last_block_hash = getValue(client_buffer, SEP_TOKEN, 0);
+      String expected_hash = getValue(client_buffer, SEP_TOKEN, 1);
+      unsigned int difficulty = getValue(client_buffer, SEP_TOKEN, 2).toInt();
+
+      DEBUG_PRINTLN("JOB_RECIVED RAW: "+ client_buffer);
+      DEBUG_PRINTLN("Job received: "
+                   + last_block_hash
+                   + " "
+                   + expected_hash
+                   + " "
+                   + String(difficulty));
+
+      //the start time
+      uint32_t startTime = micros();
+
+      DEBUG_PRINTLN("starting hashing");
+      
+      ducos1result = ducos1a(last_block_hash.c_str(), expected_hash.c_str(), difficulty);
+      uint32_t elapsedTime = micros() - startTime;
+
+      DEBUG_PRINTLN("end hashing");
+
+      last_block_hash = "";
+      expected_hash = "";
+      difficulty = 10;
+
+      float elapsed_time_s = elapsedTime / 1000000.0f;
+      float hashrate = ducos1result / elapsed_time_s;
+
+      DEBUG_PRINT("hashrate: ");
+      DEBUG_PRINT(hashrate);
+      DEBUG_PRINT(" speed: ");
+      DEBUG_PRINTLN(elapsed_time_s);
+
+      client.print(String(ducos1result)
+                     + ","
+                     + String(hashrate)
+                     + "," + String(miner_version)
+                     + ","
+                     + String(RIG_IDENTIFIER)
+                     + ","
+                     + String(DUCOID));
+
+      waitForClientData();
+
+      DEBUG_PRINTLN(client_buffer);
+      
+      #if defined(ARDUINO_ARCH_AVR)
+          PORTB = PORTB | B00100000;
+      #else
+          digitalWrite(LED_BUILTIN, LOW);
+      #endif
+      delay(90);
     }
-    }
+  }
 }
 
 void testPing(){
-    if(client.connect(pool,port)){
-      #ifdef __DEBUG__
-      Serial.println("testing pool conection");
-      #endif
-      client.println("MOTD");
-    } else {
-      #ifdef __DEBUG__
-      Serial.println("error: ");
-      #endif
-      delay(1);
+  if(client.connect(pool,port)){
+    DEBUG_PRINTLN("testing pool conection");
+    client.println("MOTD");
+  } else {
+    DEBUG_PRINTLN("error: ");
+    delay(1);
   }
 }
 
 void JOB_REQUEST() {
-      String petition = "JOB"
-                        + SEPARATOR + Username
-                        + SEPARATOR + "AVR"
-                        + SEPARATOR + key;
-      client.print(petition);
-      #ifdef __DEBUG__
-      
-      #endif   
+  String petition = "JOB"
+                    + SEPARATOR + Username
+                    + SEPARATOR + "AVR"
+                    + SEPARATOR + key;
+  client.print(petition);
 }
 
 String get_DUCOID() {
@@ -281,70 +268,45 @@ void waitForClientData(void) {
     }
   }
 
-  #ifdef __DEBUG__
-  Serial.println("client buffer: "+client_buffer);
-  #endif
+  DEBUG_PRINTLN("client buffer: "+client_buffer);
 }
 
-
 void resolvePool() {
-  // BLOQUE 1: Si se define MANUAL_POOL, solo compilamos esto y ahorramos todo el código HTTP
   #ifdef __MANUAL_POOL
     pool[0] = 192;
     pool[1] = 168;
     pool[2] = 0;
     pool[3] = 253;
     port = 8080;
-    
-    #ifdef __DEBUG__
-      Serial.println(F("Manual Pool Selected")); // F() ahorra RAM
-    #endif
+    DEBUG_PRINTLN("Manual Pool Selected");
 
-  // BLOQUE 2: Si NO es manual, compilamos la lógica de red
-  #else 
+  #else
     const char* server = "server.duinocoin.com";
 
     if (client.connect(server, 80)) {
-      // Usamos F() para guardar strings en Flash y no ocupar RAM al ejecutarse
-      client.print(F("GET /getPool HTTP/1.1\r\n"
-                   "Host: server.duinocoin.com\r\n"
-                   "Connection: close\r\n\r\n"));
+      client.print("GET /getPool HTTP/1.0\r\nHost: server.duinocoin.com\r\n\r\n");
 
-      // client.find busca una cadena en el stream y descarta todo lo anterior.
-      // Buscamos el final de los headers HTTP (\r\n\r\n)
-      if (client.find("\r\n\r\n")) {
-        
-        // Buscamos la clave "ip":"
-        if (client.find("\"ip\":\"")) {
-          // parseInt lee caracteres numéricos hasta encontrar un no-numérico (el punto o la comilla)
-          // Esto parsea "192.168.0.1" automáticamente sin usar String ni buffers
-          pool[0] = client.parseInt();
-          pool[1] = client.parseInt();
-          pool[2] = client.parseInt();
-          pool[3] = client.parseInt();
-        }
-
-        // Buscamos la clave "port":
-        if (client.find("\"port\":")) {
-          port = client.parseInt();
-        }
+      if (client.find("\"ip\":\"")) {
+        pool[0] = client.parseInt();
+        pool[1] = client.parseInt();
+        pool[2] = client.parseInt();
+        pool[3] = client.parseInt();
       }
-      
+      if (client.find("\"port\":")) {
+        port = client.parseInt();
+      }
+
       client.stop();
 
-      #ifdef __DEBUG__
-        Serial.print(F("Pool: "));
-        Serial.print(pool[0]); Serial.print('.');
-        Serial.print(pool[1]); Serial.print('.');
-        Serial.print(pool[2]); Serial.print('.');
-        Serial.print(pool[3]);
-        Serial.print(F(" Port: ")); Serial.println(port);
-      #endif
+      DEBUG_PRINT("Pool: ");
+      DEBUG_PRINT(pool[0]); DEBUG_PRINT('.');
+      DEBUG_PRINT(pool[1]); DEBUG_PRINT('.');
+      DEBUG_PRINT(pool[2]); DEBUG_PRINT('.');
+      DEBUG_PRINT(pool[3]);
+      DEBUG_PRINT(" Port: "); DEBUG_PRINTLN(port);
 
     } else {
-      #ifdef __DEBUG__
-        Serial.println(F("Connection failed"));
-      #endif
+      DEBUG_PRINTLN("Connection failed");
     }
   #endif
 }
